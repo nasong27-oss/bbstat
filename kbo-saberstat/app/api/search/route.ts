@@ -7,7 +7,8 @@ export async function GET(req: NextRequest) {
   try {
     const results = await searchPlayers(q)
     return NextResponse.json({ results })
-  } catch {
-    return NextResponse.json({ results: [] }, { status: 500 })
+  } catch (e: unknown) {
+    console.error('Search API error:', e)
+    return NextResponse.json({ results: [], error: String(e) }, { status: 500 })
   }
 }

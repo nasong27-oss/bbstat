@@ -47,8 +47,26 @@ function safeInt(val: string | undefined, fallback = 0): number {
 export async function searchPlayers(query: string): Promise<PlayerSearchResult[]> {
   try {
     const url = `${STATIZ_BASE}/player/?m=search&s=${encodeURIComponent(query)}`
-    const res = await fetch(url, { headers: HEADERS, cache: 'no-store' })
+    const res = await fetch(url, {
+      headers: {
+        ...HEADERS,
+        'Cookie': '',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+      },
+      cache: 'no-store',
+    })
+
+    console.log('[search] status:', res.status, 'url:', url)
+
+    if (!res.ok) {
+      console.error('[search] HTTP error:', res.status, res.statusText)
+      return []
+    }
+
     const html = await res.text()
+    console.log('[search] html length:', html.length, 'hasPNo:', html.includes('p_no'))
+
     const { load } = await import('cheerio')
     const $ = load(html)
     const results: PlayerSearchResult[] = []
@@ -56,12 +74,13 @@ export async function searchPlayers(query: string): Promise<PlayerSearchResult[]
     // statiz 선수 검색 결과 테이블 파싱
     $('table tbody tr').each((_, el) => {
       const cells = $(el).find('td')
-      if (cells.length < 3) return
-      const nameEl = $(cells[0]).find('a')
+      if (cells.length < 2) return
+      // 첫 번째 셀 또는 전체 셀에서 링크 찾기
+      const nameEl = $(el).find('a[href*="p_no"]').first()
       const href = nameEl.attr('href') || ''
       const name = nameEl.text().trim()
-      const team = $(cells[1]).text().trim()
-      const position = $(cells[2]).text().trim()
+      const team = cells.length > 1 ? $(cells[1]).text().trim() : ''
+      const position = cells.length > 2 ? $(cells[2]).text().trim() : ''
       const idMatch = href.match(/p_no=(\d+)/)
       const id = idMatch ? idMatch[1] : ''
       if (name && id) {
@@ -70,22 +89,34 @@ export async function searchPlayers(query: string): Promise<PlayerSearchResult[]
       }
     })
 
-    // fallback: 링크에서 직접 파싱
+    console.log('[search] table results:', results.length)
+
+    // fallback: 링크에서 직접 파싱 (div/li 구조 등)
     if (results.length === 0) {
+      const seen = new Set<string>()
       $('a[href*="p_no"]').each((_, el) => {
         const href = $(el).attr('href') || ''
-        const name = $(el).text().trim()
         const idMatch = href.match(/p_no=(\d+)/)
         const id = idMatch ? idMatch[1] : ''
-        if (name && id && name.length >= 2 && name.length <= 6) {
-          results.push({ id, name, team: '', position: '', type: 'batter' })
-        }
+        if (!id || seen.has(id)) return
+        const rawName = $(el).text().trim()
+        // 이름처럼 보이는 텍스트만 (한글 2~5자 or 영문)
+        const name = rawName.replace(/\s+/g, ' ').trim()
+        if (!name || name.length < 2 || name.length > 10) return
+        seen.add(id)
+        // 부모 요소에서 팀/포지션 찾기
+        const parent = $(el).closest('tr, li, div.item, div.player')
+        const parentText = parent.text()
+        const kboTeams = ['KIA', '삼성', 'LG', 'NC', '두산', 'SSG', '롯데', '키움', 'KT', '한화']
+        const team = kboTeams.find(t => parentText.includes(t)) || ''
+        results.push({ id, name, team, position: '', type: 'batter' })
       })
+      console.log('[search] fallback results:', results.length)
     }
 
     return results.slice(0, 20)
   } catch (e) {
-    console.error('Search error:', e)
+    console.error('[search] error:', e)
     return []
   }
 }
