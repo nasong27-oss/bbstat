@@ -1,6 +1,0 @@
-{
-  "buildCommand": "cd kbo-saberstat && npm install && npm run build",
-  "outputDirectory": "kbo-saberstat/.next",
-  "framework": "nextjs",
-  "installCommand": "cd kbo-saberstat && npm install"
-}
